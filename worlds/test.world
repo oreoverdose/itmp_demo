@@ -12,5 +12,11 @@
             <uri>model://sun</uri>
         </include>
 
+        <!-- A box to pick up -->
+        <include>
+            <pose>0 2 0 0 0 0</pose>
+            <uri>model://wood_cube_10cm</uri>
+        </include>
+
     </world>
 </sdf>
