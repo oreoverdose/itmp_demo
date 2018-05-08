@@ -227,10 +227,9 @@
         </joint>
         <static>0</static>
 
-        <model name="simple_gripper">
-            <pose>0 1 0 0 0 0</pose>
+        <!-- GRIPPER -->
             <link name="vertical_bar">
-                <pose>0 0 0.0975 0 0 0</pose>
+                <pose>0.22 0 0.1075 0 0 0</pose>
                 <inertial>
                     <pose>0 0 -0.0975 0 0 0</pose>
                     <inertia>
@@ -241,7 +240,7 @@
                         <iyz>0</iyz>
                         <izz>0.01</izz>
                     </inertia>
-                    <mass>10.0</mass>
+                    <mass>0.5</mass>
                 </inertial>
                 <collision name="collision">
                     <geometry>
@@ -257,12 +256,15 @@
                         </box>
                     </geometry>
                     <material>
-                        <script>Gazebo/Black</script>
+                        <script>
+                            <uri>file://media/materials/scripts/gazebo.material</uri>
+                            <name>Gazebo/FlatBlack</name>
+                        </script>
                     </material>
                 </visual>
             </link>
             <link name="horizontal_bar">
-                <pose>0.02 0 0 0 0 0</pose>
+                <pose>0.24 0 0.01 0 0 0</pose>
                 <inertial>
                     <inertia>
                         <ixx>0.01</ixx>
@@ -272,7 +274,7 @@
                         <iyz>0</iyz>
                         <izz>0.01</izz>
                     </inertia>
-                    <mass>2.0</mass>
+                    <mass>0.5</mass>
                 </inertial>
                 <collision name="collision">
                     <geometry>
@@ -288,12 +290,15 @@
                         </box>
                     </geometry>
                     <material>
-                        <script>Gazebo/Black</script>
+                        <script>
+                            <uri>file://media/materials/scripts/gazebo.material</uri>
+                            <name>Gazebo/FlatBlack</name>
+                        </script>
                     </material>
                 </visual>
             </link>
             <link name="left_grip">
-                <pose>0.06 0.14 0 0 0 0</pose>
+                <pose>0.28 0.14 0.01 0 0 0</pose>
                 <inertial>
                     <inertia>
                         <ixx>0.01</ixx>
@@ -303,7 +308,7 @@
                         <iyz>0</iyz>
                         <izz>0.01</izz>
                     </inertia>
-                    <mass>0.2</mass>
+                    <mass>0.1</mass>
                 </inertial>
                 <collision name="collision">
                     <geometry>
@@ -319,12 +324,15 @@
                         </box>
                     </geometry>
                     <material>
-                        <script>Gazebo/Black</script>
+                        <script>
+                            <uri>file://media/materials/scripts/gazebo.material</uri>
+                            <name>Gazebo/FlatBlack</name>
+                        </script>
                     </material>
                 </visual>
             </link>
             <link name="right_grip">
-                <pose>0.06 -0.14 0 0 0 0</pose>
+                <pose>0.28 -0.14 0.01 0 0 0</pose>
                 <inertial>
                     <inertia>
                         <ixx>0.01</ixx>
@@ -334,7 +342,7 @@
                         <iyz>0</iyz>
                         <izz>0.01</izz>
                     </inertia>
-                    <mass>0.2</mass>
+                    <mass>0.1</mass>
                 </inertial>
                 <collision name="collision">
                     <geometry>
@@ -350,11 +358,13 @@
                         </box>
                     </geometry>
                     <material>
-                        <script>Gazebo/Black</script>
+                        <script>
+                            <uri>file://media/materials/scripts/gazebo.material</uri>
+                            <name>Gazebo/FlatBlack</name>
+                        </script>
                     </material>
                 </visual>
             </link>
-            <static>false</static>
             <joint name="lift" type="prismatic">
                 <child>horizontal_bar</child>
                 <parent>vertical_bar</parent>
@@ -388,7 +398,11 @@
                     <xyz>0 1 0</xyz>
                 </axis>
             </joint>
-        </model>
+
+        <joint name="gripper_anchor" type="fixed">
+            <child>vertical_bar</child>
+            <parent>chassis</parent>
+        </joint>
         
         <plugin name='differential_drive_controller' filename='libgazebo_ros_diff_drive.so'>
             <alwaysOn>true</alwaysOn>
