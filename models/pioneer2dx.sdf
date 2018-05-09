@@ -385,6 +385,12 @@
                         <upper>0</upper>
                     </limit>
                     <xyz>0 1 0</xyz>
+                    <dynamics>
+                        <damping>10</damping>
+                        <friction>10</friction>
+                        <spring_reference>0</spring_reference>
+                        <spring_stiffness>0</spring_stiffness>
+                    </dynamics>
                 </axis>
             </joint>
             <joint name="grip_right" type="prismatic">
@@ -396,6 +402,12 @@
                         <upper>0.13</upper>
                     </limit>
                     <xyz>0 1 0</xyz>
+                    <dynamics>
+                        <damping>10</damping>
+                        <friction>10</friction>
+                        <spring_reference>0</spring_reference>
+                        <spring_stiffness>0</spring_stiffness>
+                    </dynamics>
                 </axis>
             </joint>
 
