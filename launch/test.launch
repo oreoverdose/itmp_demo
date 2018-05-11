@@ -7,6 +7,4 @@
     <!-- Import the robot model -->
     <node name="spawn_p2dx" pkg="gazebo_ros" type="spawn_model" args="-file $(find itmp_demo)/models/pioneer2dx.sdf -sdf -model pioneer2dx"/>
 
-    <!-- Import the gripper model -->
-    <!--<node name="spawn_gripper" pkg="gazebo_ros" type="spawn_model" args="-file $(find itmp_demo)/models/gripper.sdf -sdf -model gripper -x 1"/>-->
 </launch>
