@@ -10,8 +10,7 @@ import rospy
 import control
 import numpy as np
 from nav_msgs.msg import Odometry
-from gazebo_msgs.srv import ApplyJointEffort, ApplyJointEffortRequest, ApplyJointEffortResponse
-from gazebo_msgs.srv import JointRequest, JointRequestRequest, JointRequestResponse
+from geometry_msgs.msg import Twist
 from tf.transformations import euler_from_quaternion
 
 class Trajectory:
@@ -25,16 +24,16 @@ class Trajectory:
         self.theta_des = theta_des   # angle from the x axis
         self.vdes = vdes  # desired velocity in the 'theta' direction
 
-
-class WheelControl:
+class RobotController:
     
     def __init__(self):
-        rospy.wait_for_service('gazebo/apply_joint_effort')
-        self.joint_control_srv = rospy.ServiceProxy('gazebo/apply_joint_effort', ApplyJointEffort)
-        self.clear_srv = rospy.ServiceProxy('gazebo/clear_joint_forces', JointRequest)
-
         rospy.init_node("odometry_tracker", anonymous=True)
+        self.velocity_control_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
         rospy.Subscriber("odom", Odometry, self.odom_callback)
+
+        r = 5  # update rate in Hz
+        self.rate = rospy.Rate(r)
+        self.dt = 1.0/r
 
         # Initial position, orientation, etc
         self.x = 0   
@@ -42,12 +41,6 @@ class WheelControl:
         self.theta = 0
         self.v = 0      # linear velocity
         self.omega = 0  # angular velocity
-
-        # parameters from our custom pioneer model
-        self.total_mass = 40     # listed as 8.37
-        self.total_inertia = 0.15  # approximate
-        self.wheel_radius = 0.11
-        self.wheel_base = 0.17
 
     def odom_callback(self, data):
         self.x = data.pose.pose.position.x
@@ -61,53 +54,29 @@ class WheelControl:
         self.v = data.twist.twist.linear.x
         self.omega = data.twist.twist.angular.z
 
-    def apply_left_wheel_torque(self, torque):
-        self.apply_joint_force(torque, "left_wheel_hinge")
-
-    def apply_right_wheel_torque(self, torque):
-        self.apply_joint_force(torque, "right_wheel_hinge")
-
-    def apply_joint_force(self, force, joint_name):
-        """
-        Apply a (generalized) force to a given joint.
-        """
-        self.zero_forces(joint_name)
-        req = ApplyJointEffortRequest()
-        req.joint_name = joint_name
-        req.effort = force
-        req.duration.secs = -1  # continue indefinitely
-        resp = self.joint_control_srv(req)
-
     def apply_acceleration(self, linear_accel, angular_accel):
         """
-        Given desired accelerations, apply corresponding torques based on the
-        following equations:
+        Move the robot according to the given accelerations. 
+        We do this by calculating the required changes in 
+        velocity to accomplish this acceleration, and using
+        a velocity controller, since that's much easier to
+        do in Gazebo. 
 
-        v' = T_lin / m
-        omega' = T_ang / I 
-        T_lin = 1/r * (Tl + Tr)
-        T_ang = 2b/r * (Tl - Tr)
+        i.e. Given x''(k+1), we set x'(k+t) = x''(k+1)*dt + x'(k)
+
+        This means that for a given acceleration to be applied
+        over a period of time, this function should be continually
+        called with an update rate that isn't too fast.
         """
-        r = self.wheel_radius
-        b = self.wheel_base
-        vdot = linear_accel
-        wdot = angular_accel
-        m = self.total_mass
-        I = self.total_inertia
+        cmd_vel = Twist()
+        linear_vel = linear_accel*self.dt + self.v
+        angular_vel = angular_accel*self.dt + self.omega
 
-        Tl = r*vdot*m + r*wdot*I/(4*b)
-        Tr = r*vdot*m - r*wdot*I/(4*b)
+        cmd_vel.linear.x = linear_vel
+        cmd_vel.angular.z = angular_vel
 
-        self.apply_left_wheel_torque(Tl)
-        self.apply_right_wheel_torque(Tr)
-
-    def zero_forces(self, name):
-        """
-        Set the given joint force to zero
-        """
-        clear_req = JointRequestRequest()
-        clear_req.joint_name = name
-        r1 = self.clear_srv(clear_req)
+        self.velocity_control_pub.publish(cmd_vel)
+        
 
     def current_extended_state(self, traj, t):
         """
@@ -170,8 +139,6 @@ class WheelControl:
         """
         Use our LQR controller to follow a given trajectory.
         """
-        control_rate = rospy.Rate(10)  # how often to send new control commands, in hz
-
         while rospy.get_rostime() == 0:  # wait until the time is actually initialized
             rospy.sleep(0.1)
         start_time = rospy.get_time()  # time in seconds
@@ -182,15 +149,12 @@ class WheelControl:
             u = self.lqr_control(traj,t)
             self.apply_acceleration(u[0], u[1])
 
-            print(self.current_extended_state(traj, t))
-
-            control_rate.sleep()
-
+            self.rate.sleep()
 
 
 if __name__=="__main__":
 
-    c = WheelControl()
+    c = RobotController()
 
     try:
      
@@ -201,9 +165,8 @@ if __name__=="__main__":
         vdes = lambda t : 1*(t <= 5) + 1e-8*(t > 5)
 
         T = Trajectory(xdes, ydes, theta_des, vdes)
-        rospy.sleep(1)
         c.follow_trajectory(T)
 
 
-    except rospy.ServiceException as e:
-        print("Service did not process request: " + str(e))
+    except rospy.ROSInterruptException:
+        pass
