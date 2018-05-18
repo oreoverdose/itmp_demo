@@ -3,6 +3,7 @@
 - ROS Kinetic
 - Gazebo 7 Simulator
 - gazebo\_ros package
+- python-control
 
 ## Installation
 
