@@ -24,16 +24,33 @@ class Trajectory:
         self.theta_des = theta_des   # angle from the x axis
         self.vdes = vdes  # desired velocity in the 'theta' direction
 
+class Obstacle:
+    """
+    Temporary representation of an obstacle
+    """
+    def __init__(self, x=0, y=0):
+        # position
+        self.x = x
+        self.y = y
+        
+        # velocity
+        self.vx = 0
+        self.vy = 0
+
+        # acceleration limit
+        self.max_accel = 0
+
 class RobotController:
-    
     def __init__(self):
         rospy.init_node("odometry_tracker", anonymous=True)
         self.velocity_control_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
         rospy.Subscriber("odom", Odometry, self.odom_callback)
 
-        r = 5  # update rate in Hz
+        r = 10  # update rate in Hz
         self.rate = rospy.Rate(r)
         self.dt = 1.0/r
+
+        self.max_accel = [7,5]   # approximate/reasonable values. sustained acclerations can still lead to crashes
 
         # Initial position, orientation, etc
         self.x = 0   
@@ -68,7 +85,14 @@ class RobotController:
         over a period of time, this function should be continually
         called with an update rate that isn't too fast.
         """
+        # Throttle inputs by maximum allowable
+        linear_accel = linear_accel if linear_accel <= self.max_accel[0] else self.max_accel[0]
+        angular_accel = angular_accel if angular_accel <= self.max_accel[1] else self.max_accel[1]
+
+        print([linear_accel, angular_accel])
+
         cmd_vel = Twist()
+
         linear_vel = linear_accel*self.dt + self.v
         angular_vel = angular_accel*self.dt + self.omega
 
@@ -76,7 +100,43 @@ class RobotController:
         cmd_vel.angular.z = angular_vel
 
         self.velocity_control_pub.publish(cmd_vel)
-        
+       
+    def safe_control(self, u_pref, obstacle):
+        """
+        Given a preferred control input use a CBF to
+        find a (slightly different) control input with
+        guaranteed safety.
+
+        Currently assumes the obstacle is static. 
+        """
+        u = np.hstack([u_pref, np.array([0,0])]).T   # this method considers the composite control:
+                                                   # we assume the obstacle is static
+
+        D = 0.5  # safe distance
+
+        delta_p = np.array([(self.x - obstacle.x), (self.y - obstacle.y)])
+        norm_p = np.linalg.norm(delta_p)
+
+        delta_v = np.array([(self.v - obstacle.vx), (0 - obstacle.vy)])
+        norm_v = np.linalg.norm(delta_v)
+
+        a_i = self.max_accel[0]  # maximum braking accelerations
+        a_j = obstacle.max_accel
+
+        gamma = 1  # can be anything?
+
+        h = np.sqrt(2*(a_i + a_j)*(norm_p - D)) + np.matmul(delta_p.T,delta_v)/norm_p
+
+        A = np.hstack([ -delta_p, delta_p ])
+        b = gamma*(h**3)*norm_p - \
+                (np.matmul(delta_v.T,delta_p)**2)/(norm_p**2) + \
+                norm_v**2 + \
+                ( (a_i + a_j)*np.matmul(delta_v.T,delta_p) ) / ( np.sqrt(2*(a_i +a_j)*(norm_p - D)) )
+
+       
+        # Quadratic Programming
+
+
 
     def current_extended_state(self, traj, t):
         """
@@ -156,6 +216,9 @@ if __name__=="__main__":
 
     c = RobotController()
 
+    # Temporary representation of the obstacle
+    obs = Obstacle(x=2)
+
     try:
      
         # we define desired components of the trajectory as functions of time
@@ -165,7 +228,11 @@ if __name__=="__main__":
         vdes = lambda t : 1*(t <= 5) + 1e-8*(t > 5)
 
         T = Trajectory(xdes, ydes, theta_des, vdes)
-        c.follow_trajectory(T)
+        rospy.sleep(0.2)
+
+        #c.follow_trajectory(T)
+        u_pref = [5,0]
+        c.safe_control(u_pref, obs)
 
 
     except rospy.ROSInterruptException:

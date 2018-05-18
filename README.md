@@ -4,6 +4,7 @@
 - Gazebo 7 Simulator
 - gazebo\_ros package
 - python-control
+- quadprog
 
 ## Installation
 
