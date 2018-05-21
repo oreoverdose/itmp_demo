@@ -4,7 +4,7 @@
 - Gazebo 7 Simulator
 - gazebo\_ros package
 - python-control
-- quadprog
+- python-scipy
 
 ## Installation
 
@@ -29,7 +29,10 @@ source devel/setup.bash
 
 Launch the simulation with `roslaunch itmp_demo test.launch`
 
-Run a simple demonstration with `rosrun itmp_demo simple_demo.py`
+Run a simple obstacle-avoidance demonstration with `rosrun itmp_demo control_wheels.py`
+
+Run a simple pick-up demonstration with `rosrun itmp_demo simple_demo.py`
+
 
 The robot can also be controlled more directly:
 
