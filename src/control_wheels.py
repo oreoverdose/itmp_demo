@@ -13,6 +13,29 @@ from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 from tf.transformations import euler_from_quaternion
 
+from scipy.optimize import minimize
+import quadprog
+
+def quadprog_solve_qp(P, q, G=None, h=None, A=None, b=None):
+    """
+    Solve a quadratic program in standard form:
+
+    minimize    (1/2)x.T*P*x + q.T*x
+    subject to  G*x <= h
+                A*x = b
+    """
+    qp_G = .5 * (P + P.T)   # make sure P is symmetric
+    qp_a = -q
+    if A is not None:
+        qp_C = -numpy.vstack([A, G]).T
+        qp_b = -numpy.hstack([b, h])
+        meq = A.shape[0]
+    else:  # no equality constraint
+        qp_C = -G.T
+        qp_b = -h
+        meq = 0
+    return quadprog.solve_qp(qp_G, qp_a, qp_C, qp_b, meq)[0]
+       
 class Trajectory:
     """
     Describes a trajectory through space. All initializing
@@ -109,7 +132,8 @@ class RobotController:
 
         Currently assumes the obstacle is static. 
         """
-        u = np.hstack([u_pref, np.array([0,0])]).T   # this method considers the composite control:
+        u_pref = np.ndarray.flatten(u_pref)  # flatten to 1d 
+        uhat = np.hstack([u_pref, np.array([0,0])]).T   # this method considers the composite control:
                                                    # we assume the obstacle is static
 
         D = 0.5  # safe distance
@@ -133,10 +157,17 @@ class RobotController:
                 norm_v**2 + \
                 ( (a_i + a_j)*np.matmul(delta_v.T,delta_p) ) / ( np.sqrt(2*(a_i +a_j)*(norm_p - D)) )
 
-       
         # Quadratic Programming
+        J = lambda u : sum( [ (u[i]-uhat[i])**2 for i in range(len(uhat)) ] )
 
+        cons = ({'type': 'ineq', 'fun': lambda u : b - np.matmul(A,u)},      # Au <= b
+                {'type': 'ineq', 'fun': lambda u : self.max_accel - u[0:2]}, # my acceleration constraint
+                {'type': 'eq', 'fun' : lambda u : [0,0] - u[2:4]})           # static obstacle acceleration constraint
 
+        res = minimize(J, uhat, method='SLSQP', constraints=cons)
+        ustar = res.x
+
+        return ustar
 
     def current_extended_state(self, traj, t):
         """
@@ -199,14 +230,20 @@ class RobotController:
         """
         Use our LQR controller to follow a given trajectory.
         """
+
         while rospy.get_rostime() == 0:  # wait until the time is actually initialized
             rospy.sleep(0.1)
         start_time = rospy.get_time()  # time in seconds
 
+        # Note the position of a static obstacle
+        obs = Obstacle(x=2,y=0.3)
+
         while not rospy.is_shutdown():
             t = rospy.get_time() - start_time
 
-            u = self.lqr_control(traj,t)
+            upref = self.lqr_control(traj,t)
+            u = self.safe_control(upref, obs)
+
             self.apply_acceleration(u[0], u[1])
 
             self.rate.sleep()
@@ -230,9 +267,9 @@ if __name__=="__main__":
         T = Trajectory(xdes, ydes, theta_des, vdes)
         rospy.sleep(0.2)
 
-        #c.follow_trajectory(T)
-        u_pref = [5,0]
-        c.safe_control(u_pref, obs)
+        c.follow_trajectory(T)
+        #u_pref = [5,0]
+        #c.safe_control(u_pref, obs)
 
 
     except rospy.ROSInterruptException:
