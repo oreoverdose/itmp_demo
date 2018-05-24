@@ -11,41 +11,22 @@ import control
 import numpy as np
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Pose
 from tf.transformations import euler_from_quaternion
-
 from scipy.optimize import minimize
-import quadprog
 
-def quadprog_solve_qp(P, q, G=None, h=None, A=None, b=None):
-    """
-    Solve a quadratic program in standard form:
-
-    minimize    (1/2)x.T*P*x + q.T*x
-    subject to  G*x <= h
-                A*x = b
-    """
-    qp_G = .5 * (P + P.T)   # make sure P is symmetric
-    qp_a = -q
-    if A is not None:
-        qp_C = -numpy.vstack([A, G]).T
-        qp_b = -numpy.hstack([b, h])
-        meq = A.shape[0]
-    else:  # no equality constraint
-        qp_C = -G.T
-        qp_b = -h
-        meq = 0
-    return quadprog.solve_qp(qp_G, qp_a, qp_C, qp_b, meq)[0]
-       
 class Trajectory:
     """
     Describes a trajectory through space. All initializing
     arguments should be functions of time. 
     """
-    def __init__(self, xdes, ydes, theta_des, vdes):
+    def __init__(self, xdes, ydes, theta_des, vdes, end_time):
         self.xdes = xdes  # x position
         self.ydes = ydes  # y position
         self.theta_des = theta_des   # angle from the x axis
         self.vdes = vdes  # desired velocity in the 'theta' direction
+
+        self.end_time = end_time   # time at which we stop
 
 class Obstacle:
     """
@@ -112,8 +93,6 @@ class RobotController:
         linear_accel = linear_accel if linear_accel <= self.max_accel[0] else self.max_accel[0]
         angular_accel = angular_accel if angular_accel <= self.max_accel[1] else self.max_accel[1]
 
-        print([linear_accel, angular_accel])
-
         cmd_vel = Twist()
 
         linear_vel = linear_accel*self.dt + self.v
@@ -122,6 +101,13 @@ class RobotController:
         cmd_vel.linear.x = linear_vel
         cmd_vel.angular.z = angular_vel
 
+        self.velocity_control_pub.publish(cmd_vel)
+
+    def stop_motion(self):
+        """
+        Simply stop the robot at its current position
+        """
+        cmd_vel = Twist()  # initializes to zero
         self.velocity_control_pub.publish(cmd_vel)
        
     def safe_control(self, u_pref, obstacle):
@@ -132,6 +118,11 @@ class RobotController:
 
         Currently assumes the obstacle is static. 
         """
+
+        if obstacle is None:
+            # If there aren't any obstacles, don't try to change the control input!
+            return u_pref
+
         u_pref = np.ndarray.flatten(u_pref)  # flatten to 1d 
         uhat = np.hstack([u_pref, np.array([0,0])]).T   # this method considers the composite control:
                                                    # we assume the obstacle is static
@@ -143,8 +134,7 @@ class RobotController:
 
         delta_v = np.array([(self.v - obstacle.vx), (0 - obstacle.vy)])
         norm_v = np.linalg.norm(delta_v)
-
-        a_i = self.max_accel[0]  # maximum braking accelerations
+        a_i = self.max_accel[0]  # maximum braking accelerations 
         a_j = obstacle.max_accel
 
         gamma = 1  # can be anything?
@@ -226,7 +216,7 @@ class RobotController:
 
         return u
 
-    def follow_trajectory(self, traj):
+    def follow_trajectory(self, traj, obs=None):
         """
         Use our LQR controller to follow a given trajectory.
         """
@@ -235,41 +225,153 @@ class RobotController:
             rospy.sleep(0.1)
         start_time = rospy.get_time()  # time in seconds
 
-        # Note the position of a static obstacle
-        obs = Obstacle(x=2,y=0.3)
-
-        while not rospy.is_shutdown():
+        t = rospy.get_time() - start_time
+        while t < traj.end_time:
             t = rospy.get_time() - start_time
 
             upref = self.lqr_control(traj,t)
             u = self.safe_control(upref, obs)
-
+            
             self.apply_acceleration(u[0], u[1])
 
             self.rate.sleep()
+        # Stop the robot
+        self.stop_motion()
+
+    def distance_to(self, position):
+        """
+        Return the distance from myself to the specified position.
+        """
+        return np.sqrt( (position.x - self.x)**2 + (position.y - self.y)**2 )
+
+    def angle_to(self, theta):
+        """
+        Return the shortest angular distance (in radians) between
+        two angles
+        """
+        raw_diff = theta - self.theta
+
+        if raw_diff > np.pi:
+            return -(raw_diff - np.pi)
+        elif raw_diff < - np.pi:
+            return -(raw_diff + np.pi)
+        else:
+            return raw_diff
+
+    def go_to_goal_simple(self, x, y):
+        """
+        Use a simple proportional controller and velocity control
+        to move to the desired goal.
+        """
+        distance_tolerance = 0.1
+        max_vel = 1
+        max_omega = 1
+
+        goal_pos = Pose().position
+        goal_pos.x = x
+        goal_pos.y = y
+
+        cmd_vel = Twist()
+
+        while self.distance_to(goal_pos) >= distance_tolerance:
+
+            # use a proportional controller
+            Kp_linear = 1.5
+            Kp_angular = 6
+
+            steering_angle = np.arctan2(goal_pos.y - self.y, goal_pos.x - self.x)
+
+            cmd_vel.linear.x = Kp_linear * self.distance_to(goal_pos)
+            cmd_vel.angular.z = Kp_angular * self.angle_to(steering_angle)
+
+            # Throttle controls according to specified maxima
+            if cmd_vel.linear.x > max_vel:
+                cmd_vel.linear.x = max_vel
+            elif cmd_vel.linear.x < -max_vel:
+                cmd_vel.linear.x = -max_vel
+
+            if cmd_vel.angular.z > max_omega:
+                cmd_vel.angular.z = max_omega
+            elif cmd_vel.angular.z < -max_omega:
+                cmd_vel.angular.z = -max_omega
+
+            # publish to /cmd_vel
+            self.velocity_control_pub.publish(cmd_vel)
+            self.rate.sleep()
+
+        # stop the robot
+        cmd_vel.linear.x = 0
+        cmd_vel.linear.y = 0
+        self.velocity_control_pub.publish(cmd_vel)
+
+
+    def go_to_waypoint(self, x, y):
+        """
+        Generate a trajectory that gets us to the given point,
+        and then go directly there. Uses a generated trajectory to 
+        achieve this behavior.
+        """
+        # desired angular and linear velocities
+        omega = 0.5  
+        v = 0.5
+        buffer_time = 1   # time to wait after reaching the desired angle, in seconds
+
+        # register the initial position
+        theta0 = self.theta
+        x0 = self.x
+        y0 = self.y
+
+        deltax = x - x0
+        deltay = y - y0
+
+        theta = np.arctan2(deltay, deltax)   # desired angle to head directly to the waypoint
+        t1 = abs(theta - theta0)/omega      # time at which we'll reach the desired angle
+        t2 = t1 + buffer_time                         # some buffer time
+        tf = abs((x - x0)/(v*np.cos(theta))) + t2             # time at which we'll reach the waypoint
+
+        xdes = lambda t : x0*(t <= t2) + (x0 + v*np.cos(theta)*(t-t2))*(t > t2)
+        ydes = lambda t : y0*(t <= t2) + (y0 + v*np.sin(theta)*(t-t2))*(t > t2)
+        if theta > 0:
+            # rotate counterclockwise
+            thetades = lambda t : (theta0 + omega*t)*(t <= t1) + theta*(t > t1)
+        else:
+            # rotate clockwise
+            thetades = lambda t : (theta0 - omega*t)*(t <= t1) + theta*(t > t1)
+        vdes = lambda t : 1e-5*(t <= t2) + v*(t > t2)    # use a small value instead of 0 so the LQR controller can find a solution
+
+        T = Trajectory(xdes, ydes, thetades, vdes, tf)
+      
+        print(t1, t2, tf)
+        # Follow that trajectory
+        self.follow_trajectory(T)
+
+
 
 
 if __name__=="__main__":
 
     c = RobotController()
 
-    # Temporary representation of the obstacle
-    obs = Obstacle(x=2)
-
     try:
      
         # we define desired components of the trajectory as functions of time
-        xdes = lambda t : t*(t <= 5) + 5*(t > 5)    
-        ydes = lambda t : 0
-        theta_des = lambda t : 0
-        vdes = lambda t : 1*(t <= 5) + 1e-8*(t > 5)
+        #xdes = lambda t : t*(t <= 5) + 5*(t > 5)    
+        #ydes = lambda t : 0
+        #theta_des = lambda t : 0
+        #vdes = lambda t : 1*(t <= 5) + 1e-8*(t > 5)
 
-        T = Trajectory(xdes, ydes, theta_des, vdes)
+        #T = Trajectory(xdes, ydes, theta_des, vdes)
         rospy.sleep(0.2)
 
-        c.follow_trajectory(T)
-        #u_pref = [5,0]
-        #c.safe_control(u_pref, obs)
+        #obs = Obstacle(x=2,y=0.3)
+        #c.follow_trajectory(T, obs=obs)
+        #c.go_to_waypoint(0,10)
+
+        c.go_to_goal_simple(-2,-2)
+        c.go_to_goal_simple(-2,2)
+        c.go_to_goal_simple(2,2)
+        c.go_to_goal_simple(2,-2)
+
 
 
     except rospy.ROSInterruptException:
