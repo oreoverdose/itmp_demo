@@ -1,0 +1,23 @@
+<launch>
+    <!-- Create the world -->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="world_name" value="$(find itmp_demo)/worlds/test.world"/>
+    </include>
+    
+    <!-- Import the robot model -->
+    <node name="spawn_p2dx" pkg="gazebo_ros" type="spawn_model" args="-file $(find itmp_demo)/models/pioneer2dx.sdf -sdf -model pioneer2dx"/>
+    
+    <!-- Launch the input of the system -->
+    <node pkg="itmp_demo" type="system_input.py" name="system_input" output="screen"/>
+    
+    <!-- Launch the output of the system -->
+    <node pkg="itmp_demo" type="system_output.py" name="system_output" output="screen"/>
+    
+    <!-- Launch the trajectory of the system -->
+    <node pkg="itmp_demo" type="trajectory.py" name="trajectory" output="screen"/>
+     
+    <!-- Launch distrance traverse thing -->
+    <node pkg="itmp_demo" type="dist_traverse.py" name="distance_traverser" output="screen"/>
+
+
+</launch>

@@ -3,8 +3,12 @@
     <include file="$(find gazebo_ros)/launch/empty_world.launch">
         <arg name="world_name" value="$(find itmp_demo)/worlds/test.world"/>
     </include>
-
+    
     <!-- Import the robot model -->
     <node name="spawn_p2dx" pkg="gazebo_ros" type="spawn_model" args="-file $(find itmp_demo)/models/pioneer2dx.sdf -sdf -model pioneer2dx"/>
 
+    <!-- Launch teleop_twist_keyboard -->
+    <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop">
+    </node>
+   
 </launch>

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <sdf version='1.4'>
 
-    <model name='pioneer2dx'>
+    <model name='pioneer2dx_cam2'>
         <link name='chassis'>
             <pose>0 0 0.16 0 -0 0</pose>
             <inertial>
@@ -437,8 +437,7 @@
             <publishTf>1</publishTf>
             <publishWheelJointState>false</publishWheelJointState>
         </plugin>
-        
-        <!-- CAMERA -->
+    <!-- CAMERA -->
             <link name="camera">
                 <pose>0.22 0 0.5 0 0 0</pose>
                 <inertial>
@@ -474,10 +473,6 @@
                     </material>
                 </visual>
             </link>
-            <joint name="camera_joint" type="fixed">
-                <child>camera</child>
-                <parent>chassis</parent>
-            </joint>
         
     </model>
 

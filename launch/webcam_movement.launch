@@ -1,0 +1,21 @@
+<launch>
+    <!-- Create the world -->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="world_name" value="$(find itmp_demo)/worlds/test.world"/>
+    </include>
+
+    
+    <!-- Launch gazebo camera listener -->
+    <node pkg="obj_detection" type="gaz_cam.py" name="gaz_cam_listener" output="screen">
+    </node>
+    
+    <!-- Launch teleop_twist_keyboard -->
+    <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop">
+    </node>
+    
+    <!-- Launch object finder traverse thing -->
+    <node pkg="itmp_demo" type="twist_obj_detect.py" name="twist_object_detection" output="screen"/>
+    
+    <!-- Launch object position localizer thing -->
+    <node pkg="itmp_demo" type="gaz_localizer.py" name="gaz_localizer" output="screen"/>
+</launch>
